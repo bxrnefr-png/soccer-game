@@ -10,6 +10,7 @@ const BALL_RADIUS = 8;
 const KICK_FORCE = 15;
 const FRICTION = 0.98;
 const PLAYER_SPEED = 5;
+const OBSTACLE_SCORE_THRESHOLD = 20;
 
 // Game state
 const player = {
@@ -32,6 +33,8 @@ const keys = {};
 let score = 0;
 let lastKickTime = 0;
 const KICK_COOLDOWN = 500; // ms
+let obstacles = [];
+let obstaclesGenerated = false;
 
 // Input handling
 document.addEventListener('keydown', (e) => {
@@ -46,6 +49,57 @@ document.addEventListener('keydown', (e) => {
 document.addEventListener('keyup', (e) => {
     keys[e.key.toLowerCase()] = false;
 });
+
+function generateObstacles() {
+    obstacles = [];
+    const netX = FIELD_WIDTH / 2;
+    const netY = 10;
+    
+    // Generate 3-4 random obstacles in the goal area
+    const numObstacles = 3 + Math.floor(Math.random() * 2); // 3-4 obstacles
+    
+    for (let i = 0; i < numObstacles; i++) {
+        const obstacleWidth = 20 + Math.random() * 30;
+        const obstacleHeight = 15 + Math.random() * 20;
+        
+        // Random X position across the goal width (centered around net)
+        const minX = netX - 70;
+        const maxX = netX + 70;
+        const x = minX + Math.random() * (maxX - minX);
+        
+        // Random Y position in goal area
+        const y = netY + Math.random() * 30;
+        
+        obstacles.push({
+            x: x,
+            y: y,
+            width: obstacleWidth,
+            height: obstacleHeight
+        });
+    }
+    
+    obstaclesGenerated = true;
+}
+
+function checkObstacleCollision(circleX, circleY, circleRadius) {
+    for (let obstacle of obstacles) {
+        // Find closest point on rectangle to circle
+        const closestX = Math.max(obstacle.x - obstacle.width / 2, 
+                                  Math.min(circleX, obstacle.x + obstacle.width / 2));
+        const closestY = Math.max(obstacle.y - obstacle.height / 2, 
+                                  Math.min(circleY, obstacle.y + obstacle.height / 2));
+        
+        // Calculate distance
+        const distX = circleX - closestX;
+        const distY = circleY - closestY;
+        const distance = Math.sqrt(distX * distX + distY * distY);
+        
+        if (distance < circleRadius) {
+            return true; // Collision detected
+        }
+    }
+    return false;
+}
 
 function kickBall() {
     const now = Date.now();
@@ -112,11 +166,34 @@ function updateBall() {
         ball.vy *= -0.8;
     }
 
+    // Obstacle collision
+    if (score >= OBSTACLE_SCORE_THRESHOLD) {
+        if (checkObstacleCollision(ball.x, ball.y, ball.radius)) {
+            // Bounce ball away from obstacle
+            ball.vx *= -0.7;
+            ball.vy *= -0.7;
+        }
+    }
+
     // Check goal (top area)
     if (ball.y - ball.radius < 20 && ball.x > FIELD_WIDTH / 2 - 80 && ball.x < FIELD_WIDTH / 2 + 80) {
-        score++;
-        scoreDisplay.textContent = score;
-        resetBall();
+        // If obstacles exist, check if ball got through them
+        if (score >= OBSTACLE_SCORE_THRESHOLD) {
+            if (!checkObstacleCollision(ball.x, ball.y, ball.radius)) {
+                score++;
+                scoreDisplay.textContent = score;
+                resetBall();
+            }
+        } else {
+            score++;
+            scoreDisplay.textContent = score;
+            resetBall();
+            
+            // Generate obstacles when reaching threshold
+            if (score === OBSTACLE_SCORE_THRESHOLD) {
+                generateObstacles();
+            }
+        }
     }
 
     // Player-ball collision
@@ -194,6 +271,29 @@ function drawNet() {
     }
 }
 
+function drawObstacles() {
+    if (score >= OBSTACLE_SCORE_THRESHOLD && obstacles.length > 0) {
+        ctx.fillStyle = '#FF0000';
+        ctx.strokeStyle = '#CC0000';
+        ctx.lineWidth = 2;
+        
+        for (let obstacle of obstacles) {
+            ctx.fillRect(
+                obstacle.x - obstacle.width / 2,
+                obstacle.y - obstacle.height / 2,
+                obstacle.width,
+                obstacle.height
+            );
+            ctx.strokeRect(
+                obstacle.x - obstacle.width / 2,
+                obstacle.y - obstacle.height / 2,
+                obstacle.width,
+                obstacle.height
+            );
+        }
+    }
+}
+
 function drawPlayer() {
     ctx.fillStyle = '#FF4444';
     ctx.fillRect(
@@ -237,6 +337,7 @@ function gameLoop() {
     updateBall();
 
     drawField();
+    drawObstacles();
     drawPlayer();
     drawBall();
 
