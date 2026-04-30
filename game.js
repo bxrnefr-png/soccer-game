@@ -11,6 +11,7 @@ const KICK_FORCE = 15;
 const FRICTION = 0.98;
 const PLAYER_SPEED = 5;
 const OBSTACLE_SCORE_THRESHOLD = 20;
+const EVIL_THRESHOLD = 30;
 
 // Game state
 const player = {
@@ -35,6 +36,7 @@ let lastKickTime = 0;
 const KICK_COOLDOWN = 500; // ms
 let obstacles = [];
 let obstaclesGenerated = false;
+let evilMode = false;
 
 // Input handling
 document.addEventListener('keydown', (e) => {
@@ -74,11 +76,61 @@ function generateObstacles() {
             x: x,
             y: y,
             width: obstacleWidth,
-            height: obstacleHeight
+            height: obstacleHeight,
+            vx: 0,
+            vy: 0,
+            targetX: x,
+            targetY: y
         });
     }
     
     obstaclesGenerated = true;
+}
+
+function updateEvilObstacles() {
+    // Make obstacles move around randomly
+    for (let obstacle of obstacles) {
+        // Randomly change target every 60 frames
+        if (Math.random() < 0.02) {
+            obstacle.targetX = 50 + Math.random() * (FIELD_WIDTH - 100);
+            obstacle.targetY = 20 + Math.random() * 80;
+        }
+        
+        // Move towards target
+        const dx = obstacle.targetX - obstacle.x;
+        const dy = obstacle.targetY - obstacle.y;
+        const distance = Math.sqrt(dx * dx + dy * dy);
+        
+        if (distance > 5) {
+            const speed = 1.5;
+            obstacle.vx = (dx / distance) * speed;
+            obstacle.vy = (dy / distance) * speed;
+        } else {
+            obstacle.vx *= 0.9;
+            obstacle.vy *= 0.9;
+        }
+        
+        obstacle.x += obstacle.vx;
+        obstacle.y += obstacle.vy;
+        
+        // Boundary collision for obstacles
+        if (obstacle.x - obstacle.width / 2 < 0) {
+            obstacle.x = obstacle.width / 2;
+            obstacle.vx *= -0.8;
+        }
+        if (obstacle.x + obstacle.width / 2 > FIELD_WIDTH) {
+            obstacle.x = FIELD_WIDTH - obstacle.width / 2;
+            obstacle.vx *= -0.8;
+        }
+        if (obstacle.y - obstacle.height / 2 < 0) {
+            obstacle.y = obstacle.height / 2;
+            obstacle.vy *= -0.8;
+        }
+        if (obstacle.y + obstacle.height / 2 > FIELD_HEIGHT) {
+            obstacle.y = FIELD_HEIGHT - obstacle.height / 2;
+            obstacle.vy *= -0.8;
+        }
+    }
 }
 
 function checkObstacleCollision(circleX, circleY, circleRadius) {
@@ -182,6 +234,12 @@ function updateBall() {
             if (!checkObstacleCollision(ball.x, ball.y, ball.radius)) {
                 score++;
                 scoreDisplay.textContent = score;
+                
+                // Enable evil mode at score 30
+                if (score === EVIL_THRESHOLD) {
+                    evilMode = true;
+                }
+                
                 resetBall();
             }
         } else {
@@ -271,25 +329,81 @@ function drawNet() {
     }
 }
 
+function drawEyes(x, y, eyeSpacing, eyeRadius) {
+    // Left eye white
+    ctx.fillStyle = '#FFFFFF';
+    ctx.beginPath();
+    ctx.arc(x - eyeSpacing / 2, y, eyeRadius, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Right eye white
+    ctx.beginPath();
+    ctx.arc(x + eyeSpacing / 2, y, eyeRadius, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Left pupil (googly eye - off to the side)
+    ctx.fillStyle = '#000000';
+    const pupilOffset = eyeRadius * 0.4;
+    ctx.beginPath();
+    ctx.arc(x - eyeSpacing / 2 + pupilOffset, y + pupilOffset, eyeRadius * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+    
+    // Right pupil (googly eye - off to the side)
+    ctx.beginPath();
+    ctx.arc(x + eyeSpacing / 2 + pupilOffset, y + pupilOffset, eyeRadius * 0.5, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function drawEvilEyebrows(x, y, browWidth, browHeight) {
+    ctx.fillStyle = '#000000';
+    ctx.lineWidth = 1;
+    
+    // Left eyebrow (angled down towards center)
+    ctx.beginPath();
+    ctx.moveTo(x - browWidth / 2 - 5, y - 8);
+    ctx.lineTo(x - 2, y - 4);
+    ctx.lineTo(x - 2, y - 2);
+    ctx.lineTo(x - browWidth / 2 - 5, y - 6);
+    ctx.fill();
+    
+    // Right eyebrow (angled down towards center)
+    ctx.beginPath();
+    ctx.moveTo(x + browWidth / 2 + 5, y - 8);
+    ctx.lineTo(x + 2, y - 4);
+    ctx.lineTo(x + 2, y - 2);
+    ctx.lineTo(x + browWidth / 2 + 5, y - 6);
+    ctx.fill();
+}
+
 function drawObstacles() {
     if (score >= OBSTACLE_SCORE_THRESHOLD && obstacles.length > 0) {
-        ctx.fillStyle = '#FF0000';
-        ctx.strokeStyle = '#CC0000';
-        ctx.lineWidth = 2;
-        
         for (let obstacle of obstacles) {
+            // Draw main red block
+            ctx.fillStyle = '#FF0000';
             ctx.fillRect(
                 obstacle.x - obstacle.width / 2,
                 obstacle.y - obstacle.height / 2,
                 obstacle.width,
                 obstacle.height
             );
+            
+            ctx.strokeStyle = '#CC0000';
+            ctx.lineWidth = 2;
             ctx.strokeRect(
                 obstacle.x - obstacle.width / 2,
                 obstacle.y - obstacle.height / 2,
                 obstacle.width,
                 obstacle.height
             );
+            
+            // Add googly eyes and evil eyebrows if evil mode is enabled
+            if (evilMode) {
+                const eyeSpacing = obstacle.width * 0.5;
+                const eyeRadius = 4;
+                
+                drawEyes(obstacle.x, obstacle.y - obstacle.height / 4, eyeSpacing, eyeRadius);
+                drawEvilEyebrows(obstacle.x, obstacle.y - obstacle.height / 4 - 3, eyeSpacing, 4);
+            }
         }
     }
 }
@@ -335,6 +449,11 @@ function drawBall() {
 function gameLoop() {
     updatePlayer();
     updateBall();
+    
+    // Update evil obstacle movement
+    if (evilMode && obstacles.length > 0) {
+        updateEvilObstacles();
+    }
 
     drawField();
     drawObstacles();
